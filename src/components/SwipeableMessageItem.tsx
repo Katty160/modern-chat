@@ -1,3 +1,4 @@
+
 import React from "react";
 import { View, Text, TouchableOpacity, Image } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
@@ -8,8 +9,12 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+
 import { COLORS } from "@/constants/theme";
 import { Id } from "@/convex/_generated/dataModel";
+
+import { VoiceMessagePlayer } from "./VoiceMessagePlayer";
+import { ReactionBadges } from "./ReactionBadges";
 
 export interface MessageItemData {
   _id: Id<"messages">;
@@ -18,6 +23,8 @@ export interface MessageItemData {
   senderPhoto?: string;
   content?: string;
   imageUrl?: string;
+  audioUrl?: string;
+  audioDuration?: number;
   isEdited?: boolean;
   replyToId?: Id<"messages">;
   replyToSender?: string;
@@ -36,7 +43,9 @@ interface SwipeableMessageItemProps {
 
 const SWIPE_THRESHOLD = 50;
 
-export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
+export const SwipeableMessageItem: React.FC<
+  SwipeableMessageItemProps
+> = ({
   item,
   isOwn,
   onLongPress,
@@ -50,11 +59,9 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
     onReply(item);
   };
 
-  // Жест свайпу вправо для відповіді
   const panGesture = Gesture.Pan()
     .activeOffsetX([-10, 10])
     .onUpdate((event) => {
-      // Дозволяємо тягнути тільки вправо (від 0 до 80)
       if (event.translationX > 0) {
         translateX.value = Math.min(event.translationX, 80);
       }
@@ -63,7 +70,11 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
       if (event.translationX > SWIPE_THRESHOLD) {
         runOnJS(triggerReply)();
       }
-      translateX.value = withSpring(0, { damping: 16, stiffness: 200 });
+
+      translateX.value = withSpring(0, {
+        damping: 16,
+        stiffness: 200,
+      });
     });
 
   const animatedBubbleStyle = useAnimatedStyle(() => ({
@@ -71,7 +82,11 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
   }));
 
   const animatedIconStyle = useAnimatedStyle(() => {
-    const progress = Math.min(translateX.value / SWIPE_THRESHOLD, 1);
+    const progress = Math.min(
+      translateX.value / SWIPE_THRESHOLD,
+      1
+    );
+
     return {
       opacity: progress,
       transform: [{ scale: 0.5 + progress * 0.5 }],
@@ -79,52 +94,66 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
   });
 
   return (
-    <View className="relative justify-center my-1">
-      {/* Прихована іконка відповіді зліва */}
+    <View className="relative my-1">
+      {/* Іконка відповіді при свайпі */}
       <Animated.View
         style={animatedIconStyle}
         className="absolute left-2 z-0 items-center justify-center w-8 h-8 rounded-full bg-primary/30"
       >
-        <Ionicons name="arrow-undo" size={18} color={COLORS.primary} />
+        <Ionicons
+          name="arrow-undo"
+          size={18}
+          color={COLORS.primary}
+        />
       </Animated.View>
 
-      {/* Сама бульбашка повідомлення із підтримкою жесту */}
+      {/* Повідомлення */}
       <GestureDetector gesture={panGesture}>
         <Animated.View
           style={animatedBubbleStyle}
-          className={`flex-row ${isOwn ? "justify-end" : "justify-start"}`}
+          className={`flex-row ${
+            isOwn ? "justify-end" : "justify-start"
+          }`}
         >
           <TouchableOpacity
             activeOpacity={0.9}
             onLongPress={onLongPress}
             className={`max-w-[82%] rounded-2xl p-3 ${
-              isOwn ? "bg-primary rounded-br-xs" : "bg-secondary rounded-bl-xs"
+              isOwn
+                ? "bg-primary rounded-br-xs"
+                : "bg-secondary rounded-bl-xs"
             }`}
           >
-            {/* Автор повідомлення (клікабельний для переходу в профіль) */}
+            {/* Автор */}
             {!isOwn && (
               <TouchableOpacity
                 onPress={() => onAuthorPress?.(item.senderId)}
                 activeOpacity={0.7}
                 className="mb-1"
               >
-                <Text className="text-primary font-bold text-xs">{item.senderName}</Text>
+                <Text className="text-primary font-bold text-xs">
+                  {item.senderName}
+                </Text>
               </TouchableOpacity>
             )}
 
-            {/* Блок цитованого повідомлення (Reply Box) */}
+            {/* Відповідь */}
             {item.replyToSender && (
               <View className="mb-2 p-2 rounded-lg bg-surface/50 border-l-2 border-primary">
                 <Text className="text-primary font-semibold text-[11px]">
                   {item.replyToSender}
                 </Text>
-                <Text className="text-white/70 text-xs mt-0.5" numberOfLines={2}>
+
+                <Text
+                  className="text-white/70 text-xs mt-0.5"
+                  numberOfLines={2}
+                >
                   {item.replyToText || "📷 Фотографія"}
                 </Text>
               </View>
             )}
 
-            {/* Фотографія (якщо прикріплена) */}
+            {/* Фото */}
             {item.imageUrl && (
               <TouchableOpacity
                 activeOpacity={0.9}
@@ -138,16 +167,32 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
               </TouchableOpacity>
             )}
 
-            {/* Текст повідомлення */}
+            {/* Голосове */}
+            {item.audioUrl && (
+              <View className="my-1">
+                <VoiceMessagePlayer
+                  audioUrl={item.audioUrl}
+                  duration={item.audioDuration}
+                  isMyMessage={isOwn}
+                />
+              </View>
+            )}
+
+            {/* Текст */}
             {item.content ? (
-              <Text className="text-white text-base leading-5">{item.content}</Text>
+              <Text className="text-white text-base leading-5">
+                {item.content}
+              </Text>
             ) : null}
 
-            {/* Час та статус редагування */}
+            {/* Час */}
             <View className="flex-row items-center justify-end mt-1 gap-1">
               {item.isEdited && (
-                <Text className="text-white/60 text-[10px] italic">(ред.)</Text>
+                <Text className="text-white/60 text-[10px] italic">
+                  (ред.)
+                </Text>
               )}
+
               <Text className="text-white/60 text-[10px]">
                 {new Date(item._creationTime).toLocaleTimeString([], {
                   hour: "2-digit",
@@ -158,6 +203,16 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
           </TouchableOpacity>
         </Animated.View>
       </GestureDetector>
+
+      {/* Реакції під повідомленням */}
+      <View
+        className={`${
+          isOwn ? "items-end mr-3" : "items-start ml-3"
+        }`}
+      >
+        <ReactionBadges messageId={item._id} />
+      </View>
     </View>
   );
 };
+
