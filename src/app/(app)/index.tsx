@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -5,189 +6,128 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Image,
+  Alert,
 } from "react-native";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { COLORS } from "@/constants/theme";
+import { Id } from "@/convex/_generated/dataModel";
+import { SwipeableRoomItem } from "@/components/SwipeableRoomItem";
 
 export default function HomeScreen() {
   const router = useRouter();
-
   const rooms = useQuery(api.rooms.listRooms);
   const currentUser = useQuery(api.users.currentUser);
+  const deleteRoom = useMutation(api.rooms.deleteRoom);
 
   const [refreshing, setRefreshing] = useState(false);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  };
 
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 500);
+  // Обробка видалення кімнати через діалог підтвердження
+  const handleDeleteRoom = (roomId: Id<"chatRooms">) => {
+    const room = rooms?.find((r) => r._id === roomId);
+    if (!room) return;
+
+    const isCreator = room.creatorId === currentUser?._id;
+
+    if (!isCreator) {
+      Alert.alert(
+        "Обмеження доступу",
+        "Лише автор кімнати має право видалити її для всіх учасників.",
+        [{ text: "Зрозуміло", style: "default" }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Видалити кімнату?",
+      `Ви впевнені, що хочете видалити кімнату «${room.title}» та всі її повідомлення? Цю дію неможливо скасувати.`,
+      [
+        { text: "Скасувати", style: "cancel" },
+        {
+          text: "Видалити",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteRoom({ roomId });
+            } catch (error: any) {
+              Alert.alert("Помилка", error?.message || "Не вдалося видалити кімнату");
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
-    <View className="flex-1 bg-[#0B0B0F]">
+    <View className="flex-1 bg-surface">
       <Stack.Screen
         options={{
           title: "Чат-кімнати",
-
-          headerStyle: {
-            backgroundColor: "#0B0B0F",
-          },
-
-          headerTintColor: "#FFFFFF",
-
-          headerShadowVisible: false,
-
-          // Аватарка користувача
           headerLeft: () => (
             <TouchableOpacity
               onPress={() => router.push("/profile")}
-              className="ml-2 w-10 h-10 rounded-full bg-[#151519] border border-[#E8A1B8]/40 items-center justify-center overflow-hidden"
+              className="mr-3 w-9 h-9 rounded-full bg-secondary border border-surfaceLight items-center justify-center"
               activeOpacity={0.8}
             >
-              {currentUser?.image ? (
-                <Image
-                  source={{ uri: currentUser.image }}
-                  className="w-full h-full"
-                  resizeMode="cover"
-                />
-              ) : (
-                <Ionicons
-                  name="person-outline"
-                  size={19}
-                  color="#E8A1B8"
-                />
-              )}
+              <Ionicons name="person" size={18} color={COLORS.primary} />
             </TouchableOpacity>
           ),
-
-          // Кнопка створення кімнати
           headerRight: () => (
             <TouchableOpacity
               onPress={() => router.push("/new-room")}
-              className="mr-2 w-10 h-10 rounded-full bg-[#E8A1B8] items-center justify-center"
+              className="w-9 h-9 rounded-full bg-primary items-center justify-center shadow-sm"
               activeOpacity={0.8}
             >
-              <Ionicons
-                name="add"
-                size={24}
-                color="#0B0B0F"
-              />
+              <Ionicons name="add" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           ),
         }}
       />
 
       {rooms === undefined ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator
-            size="large"
-            color="#E8A1B8"
-          />
-
-          <Text className="text-[#777780] text-sm mt-4">
-            Завантаження...
-          </Text>
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text className="text-textMuted text-xs mt-3">Завантаження кімнат...</Text>
         </View>
       ) : rooms.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <View className="w-20 h-20 rounded-[28px] bg-[#151519] border border-[#25252C] items-center justify-center mb-5">
-            <Ionicons
-              name="chatbubbles-outline"
-              size={38}
-              color="#E8A1B8"
-            />
+        <View className="flex-1 justify-center items-center px-6">
+          <View className="w-16 h-16 rounded-3xl bg-secondary border border-surfaceLight items-center justify-center mb-4">
+            <Ionicons name="chatbubbles-outline" size={32} color={COLORS.textMuted} />
           </View>
-
-          <Text className="text-white text-xl font-bold text-center">
-            Немає чат-кімнат
+          <Text className="text-white text-lg font-bold text-center">Немає активних кімнат</Text>
+          <Text className="text-textMuted text-sm text-center mt-1">
+            Створіть першу кімнату за допомогою кнопки «+» угорі
           </Text>
-
-          <Text className="text-[#777780] text-sm text-center mt-2 leading-5">
-            Створіть першу кімнату за допомогою кнопки +
-          </Text>
-
-          <TouchableOpacity
-            onPress={() => router.push("/new-room")}
-            className="bg-[#E8A1B8] px-6 py-4 rounded-2xl mt-6"
-            activeOpacity={0.8}
-          >
-            <Text className="text-[#0B0B0F] font-bold">
-              Створити кімнату
-            </Text>
-          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
           data={rooms}
           keyExtractor={(item) => item._id}
-          contentContainerStyle={{
-            padding: 16,
-            gap: 12,
-          }}
+          contentContainerStyle={{ padding: 16 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#E8A1B8"
+              tintColor={COLORS.primary}
             />
           }
           renderItem={({ item }) => (
-            <TouchableOpacity
+            <SwipeableRoomItem
+              room={item}
+              isCreator={item.creatorId === currentUser?._id}
               onPress={() => router.push(`/chat/${item._id}`)}
-              className="bg-[#151519] border border-[#25252C] rounded-[22px] p-5 flex-row items-center"
-              activeOpacity={0.8}
-            >
-              <View className="w-12 h-12 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center mr-4">
-                <Ionicons
-                  name="chatbubble-outline"
-                  size={22}
-                  color="#E8A1B8"
-                />
-              </View>
-
-              <View className="flex-1">
-                <Text
-                  className="text-white text-base font-bold"
-                  numberOfLines={1}
-                >
-                  {item.title}
-                </Text>
-
-                {item.description ? (
-                  <Text
-                    className="text-[#777780] text-sm mt-1"
-                    numberOfLines={1}
-                  >
-                    {item.description}
-                  </Text>
-                ) : null}
-
-                {item.lastMessage ? (
-                  <Text
-                    className="text-[#E8A1B8] text-xs mt-2"
-                    numberOfLines={1}
-                  >
-                    {item.lastMessage}
-                  </Text>
-                ) : null}
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="#55555F"
-              />
-            </TouchableOpacity>
+              onDelete={handleDeleteRoom}
+            />
           )}
         />
       )}
     </View>
   );
 }
-
