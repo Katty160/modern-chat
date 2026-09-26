@@ -22,12 +22,24 @@ export default defineSchema({
     lastMessageAt: v.optional(v.number()),
   }).index("by_creator", ["creatorId"]),
 
+  typingIndicators: defineTable({
+    chatRoomId: v.id("chatRooms"),
+    userId: v.id("users"),
+    userName: v.string(),
+    lastTypedAt: v.number(),
+  })
+    .index("by_room", ["chatRoomId"])
+    .index("by_user_and_room", ["userId", "chatRoomId"]),
+
   // Повідомлення в кімнатах
   messages: defineTable({
     chatRoomId: v.id("chatRooms"),
     senderId: v.id("users"),
     senderName: v.string(),
     senderPhoto: v.optional(v.string()),
-    content: v.string(),
+    content: v.optional(v.string()),          // Текст повідомлення (тепер опціональний)
+    imageUrl: v.optional(v.string()),         // Публічне посилання на зображення
+    storageId: v.optional(v.id("_storage")),
+    isEdited: v.optional(v.boolean()), // Прапорець редагування
   }).index("by_chat_room", ["chatRoomId"]),
 });

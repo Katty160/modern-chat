@@ -1,415 +1,538 @@
 import {
   View,
   Text,
-  FlatList,
   TextInput,
   TouchableOpacity,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
   Image,
 } from "react-native";
-import { useState, useRef, useEffect } from "react";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { useState, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { COLORS } from "@/constants/theme";
+import { Id } from "@/convex/_generated/dataModel";
+import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
+import { fetch as expoFetch } from "expo/fetch";
+import { ImageViewerModal } from "@/components/ImageViewerModal";
+import { TypingDots } from "@/components/TypingDots";
 
-const COLORS = {
-  background: "#0B0B0F",
-  card: "#151519",
-  border: "#25252C",
-  primary: "#E8A1B8",
-  white: "#FFFFFF",
-  muted: "#777780",
-  darkMuted: "#55555F",
-};
-
-export default function ChatScreen() {
+export default function ChatRoomScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const chatRoomId = id as Id<"chatRooms">;
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const flatListRef = useRef<FlatList>(null);
 
-  const roomId = id as Id<"chatRooms">;
-
-  const room = useQuery(api.rooms.getRoom, { roomId });
-  const messages = useQuery(api.messages.listMessages, {
-    chatRoomId: roomId,
-  });
+  const room = useQuery(api.rooms.getRoom, { roomId: chatRoomId });
+  const messages = useQuery(api.messages.listMessages, { chatRoomId });
   const currentUser = useQuery(api.users.currentUser);
+  const typingUsers = useQuery(api.typing.getTypingUsers, { chatRoomId });
 
   const sendMessage = useMutation(api.messages.sendMessage);
+  const sendMediaMessage = useMutation(api.messages.sendMediaMessage);
+  const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
+  const editMessage = useMutation(api.messages.editMessage);
+  const deleteMessage = useMutation(api.messages.deleteMessage);
+  const setTyping = useMutation(api.typing.setTyping);
 
   const [inputText, setInputText] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] =
+    useState<Id<"messages"> | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (messages && messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({
-          animated: true,
-        });
-      }, 100);
+  const flatListRef = useRef<FlatList>(null);
+  const lastTypingSentRef = useRef(0);
+
+  const handleTextChange = (text: string) => {
+    setInputText(text);
+
+    const now = Date.now();
+
+    if (now - lastTypingSentRef.current > 1500) {
+      lastTypingSentRef.current = now;
+      setTyping({ chatRoomId }).catch(() => { });
     }
-  }, [messages?.length]);
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]?.uri) {
+      setSelectedImageUri(result.assets[0].uri);
+    }
+  };
 
   const handleSend = async () => {
-    if (!inputText.trim() || isSending) return;
-
     const text = inputText.trim();
 
-    setInputText("");
-    setIsSending(true);
+    if (!text && !selectedImageUri) return;
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
 
     try {
+      // Редагування повідомлення
+      if (editingMessageId) {
+        if (!text) {
+          Alert.alert("Помилка", "Повідомлення не може бути порожнім");
+          return;
+        }
+
+        await editMessage({
+          messageId: editingMessageId,
+          content: text,
+        });
+
+        setEditingMessageId(null);
+        setInputText("");
+        return;
+      }
+
+      // Відправка фото
+      if (selectedImageUri) {
+        console.log("IMAGE URI:", selectedImageUri);
+
+        // Отримуємо URL для завантаження в Convex Storage
+        const uploadUrl = await generateUploadUrl();
+
+        console.log("UPLOAD URL:", uploadUrl);
+
+        if (!uploadUrl) {
+          throw new Error("Не вдалося отримати URL для завантаження");
+        }
+
+        // Створюємо файл з локального URI
+        const file = new File(selectedImageUri);
+
+        console.log("FILE EXISTS:", file.exists);
+
+        if (!file.exists) {
+          throw new Error("Файл зображення не знайдено");
+        }
+
+        // Завантажуємо файл у Convex
+        const uploadResponse = await expoFetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "image/jpeg",
+          },
+          body: file,
+        });
+
+        console.log("UPLOAD STATUS:", uploadResponse.status);
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.log("UPLOAD ERROR:", errorText);
+
+          throw new Error("Не вдалося завантажити зображення");
+        }
+
+        const uploadResult = await uploadResponse.json();
+
+        console.log("UPLOAD RESULT:", uploadResult);
+
+        const storageId = uploadResult?.storageId;
+
+        if (!storageId) {
+          throw new Error("Convex не повернув storageId");
+        }
+
+        // Створюємо повідомлення з фото
+        await sendMediaMessage({
+          chatRoomId,
+          storageId,
+          caption: text || undefined,
+        });
+
+        setSelectedImageUri(null);
+        setInputText("");
+
+        return;
+      }
+
+      // Звичайне текстове повідомлення
       await sendMessage({
-        chatRoomId: roomId,
+        chatRoomId,
         content: text,
       });
+
+      setInputText("");
     } catch (error) {
-      console.error("Error sending message", error);
-      setInputText(text);
+      console.error("SEND MESSAGE ERROR:", error);
+
+      Alert.alert(
+        "Помилка",
+        error instanceof Error
+          ? error.message
+          : "Не вдалося відправити повідомлення"
+      );
     } finally {
-      setIsSending(false);
+      setIsSubmitting(false);
     }
   };
 
-  const formatTime = (timestamp?: number) => {
-    if (!timestamp) return "";
+  const handleMessageLongPress = (item: {
+    _id: Id<"messages">;
+    senderId: Id<"users">;
+    content?: string;
+  }) => {
+    if (item.senderId !== currentUser?._id) return;
 
-    const date = new Date(timestamp);
+    const options: any[] = [];
 
-    return date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
+    if (item.content) {
+      options.push({
+        text: "Редагувати",
+        onPress: () => {
+          setEditingMessageId(item._id);
+          setInputText(item.content || "");
+        },
+      });
+    }
+
+    options.push({
+      text: "Видалити",
+      style: "destructive",
+      onPress: () => {
+        Alert.alert(
+          "Видалити повідомлення",
+          "Ви впевнені, що хочете видалити повідомлення?",
+          [
+            {
+              text: "Скасувати",
+              style: "cancel",
+            },
+            {
+              text: "Видалити",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await deleteMessage({
+                    messageId: item._id,
+                  });
+                } catch (error) {
+                  Alert.alert(
+                    "Помилка",
+                    "Не вдалося видалити повідомлення"
+                  );
+                }
+              },
+            },
+          ]
+        );
+      },
     });
-  };
 
-  if (!room) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: COLORS.background,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+    options.push({
+      text: "Скасувати",
+      style: "cancel",
+    });
+
+    Alert.alert(
+      "Дії з повідомленням",
+      "Оберіть дію",
+      options
     );
-  }
+  };
 
   return (
     <KeyboardAvoidingView
+      className="flex-1 bg-[#0B0B0F]"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      style={{
-        flex: 1,
-        backgroundColor: COLORS.background,
-      }}
     >
       <Stack.Screen
         options={{
-          title: room.title,
-
+          title: room?.title ?? "Чат",
           headerStyle: {
-            backgroundColor: COLORS.background,
+            backgroundColor: "#0B0B0F",
           },
-
-          headerTintColor: COLORS.white,
-
+          headerTintColor: "#FFFFFF",
+          headerTitleStyle: {
+            color: "#FFFFFF",
+            fontWeight: "600",
+          },
           headerShadowVisible: false,
-
           headerRight: () => (
             <TouchableOpacity
-              onPress={() => router.push(`/settings/${roomId}`)}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: COLORS.card,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-                alignItems: "center",
-                justifyContent: "center",
-                marginRight: 4,
-              }}
-              activeOpacity={0.8}
+              onPress={() =>
+                router.push(`/settings/${chatRoomId}`)
+              }
+              className="w-9 h-9 rounded-full bg-[#151519] items-center justify-center"
             >
               <Ionicons
                 name="information-circle-outline"
-                size={20}
-                color={COLORS.primary}
+                size={21}
+                color="#E8A1B8"
               />
             </TouchableOpacity>
           ),
         }}
       />
 
-      {messages === undefined ? (
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <ActivityIndicator
-            size="large"
-            color={COLORS.primary}
-          />
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item._id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 12,
-            gap: 12,
-            flexGrow: messages.length === 0 ? 1 : undefined,
-          }}
-          ListEmptyComponent={
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => item._id}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 12,
+        }}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() =>
+          flatListRef.current?.scrollToEnd({
+            animated: false,
+          })
+        }
+        renderItem={({ item }) => {
+          const isOwn = item.senderId === currentUser?._id;
+
+          return (
             <View
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                paddingVertical: 80,
-              }}
+              className={`mb-3 flex-row ${isOwn ? "justify-end" : "justify-start"
+                }`}
             >
-              <View
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: 24,
-                  backgroundColor: "#E8A1B814",
-                  borderWidth: 1,
-                  borderColor: "#E8A1B826",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onLongPress={() => handleMessageLongPress(item)}
+                delayLongPress={400}
+                className={`max-w-[82%]`}
               >
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={32}
-                  color={COLORS.primary}
-                />
-              </View>
-
-              <Text
-                style={{
-                  color: COLORS.white,
-                  fontSize: 16,
-                  fontWeight: "700",
-                  marginTop: 16,
-                }}
-              >
-                Тут поки тихо
-              </Text>
-
-              <Text
-                style={{
-                  color: COLORS.muted,
-                  fontSize: 13,
-                  marginTop: 6,
-                  textAlign: "center",
-                }}
-              >
-                Напишіть першим і почніть розмову
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => {
-            const isMe =
-              currentUser && item.senderId === currentUser._id;
-
-            return (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "flex-end",
-                  justifyContent: isMe
-                    ? "flex-end"
-                    : "flex-start",
-                  gap: 8,
-                }}
-              >
-                {!isMe && (
-                  <View
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      backgroundColor: COLORS.card,
-                      borderWidth: 1,
-                      borderColor: COLORS.border,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginBottom: 2,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {item.senderPhoto ? (
-                      <Image
-                        source={{ uri: item.senderPhoto }}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                        }}
-                      />
-                    ) : (
-                      <Text
-                        style={{
-                          color: COLORS.primary,
-                          fontSize: 12,
-                          fontWeight: "700",
-                        }}
-                      >
-                        {item.senderName[0]?.toUpperCase() ?? "U"}
-                      </Text>
-                    )}
-                  </View>
-                )}
-
                 <View
-                  style={{
-                    maxWidth: "78%",
-                    paddingHorizontal: 16,
-                    paddingVertical: 11,
-                    borderRadius: 18,
-                    backgroundColor: isMe
-                      ? COLORS.primary
-                      : COLORS.card,
-                    borderWidth: isMe ? 0 : 1,
-                    borderColor: COLORS.border,
-                    borderBottomRightRadius: isMe ? 4 : 18,
-                    borderBottomLeftRadius: isMe ? 18 : 4,
-                  }}
+                  className={`px-4 py-3 rounded-2xl ${isOwn
+                    ? "bg-[#E8A1B8] rounded-br-md"
+                    : "bg-[#151519] rounded-bl-md border border-[#25252C]"
+                    }`}
                 >
-                  {!isMe && (
-                    <Text
-                      style={{
-                        color: COLORS.primary,
-                        fontSize: 12,
-                        fontWeight: "700",
-                        marginBottom: 4,
-                      }}
-                    >
+                  {!isOwn && (
+                    <Text className="text-[#E8A1B8] text-xs font-semibold mb-1.5">
                       {item.senderName}
                     </Text>
                   )}
 
-                  <Text
-                    style={{
-                      color: isMe
-                        ? COLORS.background
-                        : COLORS.white,
-                      fontSize: 15,
-                      lineHeight: 21,
-                    }}
-                  >
-                    {item.content}
-                  </Text>
+                  {item.imageUrl && (
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        setFullscreenImage(item.imageUrl!)
+                      }
+                    >
+                      <Image
+                        source={{
+                          uri: item.imageUrl,
+                        }}
+                        className="w-60 h-60 rounded-xl mb-2"
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  )}
 
-                  <Text
-                    style={{
-                      color: isMe
-                        ? "#0B0B0F99"
-                        : COLORS.muted,
-                      fontSize: 10,
-                      textAlign: "right",
-                      marginTop: 5,
-                    }}
-                  >
-                    {formatTime(item._creationTime)}
-                  </Text>
+                  {item.content ? (
+                    <Text
+                      className={`text-[15px] leading-5 ${isOwn
+                        ? "text-[#0B0B0F]"
+                        : "text-white"
+                        }`}
+                    >
+                      {item.content}
+                    </Text>
+                  ) : null}
+
+                  <View className="flex-row items-center justify-end mt-1.5 gap-1">
+                    {item.isEdited && (
+                      <Text
+                        className={`text-[9px] italic ${isOwn
+                          ? "text-[#0B0B0F]/50"
+                          : "text-white/40"
+                          }`}
+                      >
+                        ред.
+                      </Text>
+                    )}
+
+                    <Text
+                      className={`text-[9px] ${isOwn
+                        ? "text-[#0B0B0F]/50"
+                        : "text-white/40"
+                        }`}
+                    >
+                      {new Date(
+                        item._creationTime
+                      ).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            );
-          }}
-        />
+              </TouchableOpacity>
+            </View>
+          );
+        }}
+      />
+
+      {typingUsers && typingUsers.length > 0 && (
+        <View className="px-1">
+          <TypingDots typingUsers={typingUsers} />
+        </View>
       )}
 
-      {/* Поле введення */}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingTop: 10,
-          paddingBottom: Math.max(insets.bottom, 10),
-          backgroundColor: COLORS.background,
-          borderTopWidth: 1,
-          borderTopColor: COLORS.border,
-          flexDirection: "row",
-          alignItems: "flex-end",
-          gap: 8,
-        }}
-      >
-        <TextInput
-          style={{
-            flex: 1,
-            backgroundColor: COLORS.card,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            borderRadius: 18,
-            paddingHorizontal: 16,
-            paddingVertical: 11,
-            color: COLORS.white,
-            fontSize: 15,
-            minHeight: 44,
-            maxHeight: 110,
-          }}
-          placeholder="Напишіть повідомлення..."
-          placeholderTextColor={COLORS.muted}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-        />
-
-        <TouchableOpacity
-          onPress={handleSend}
-          disabled={!inputText.trim() || isSending}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 17,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor:
-              inputText.trim() && !isSending
-                ? COLORS.primary
-                : COLORS.card,
-            borderWidth:
-              inputText.trim() && !isSending ? 0 : 1,
-            borderColor: COLORS.border,
-          }}
-          activeOpacity={0.8}
-        >
-          {isSending ? (
-            <ActivityIndicator
-              size="small"
-              color={COLORS.primary}
-            />
-          ) : (
+      {editingMessageId && (
+        <View className="flex-row items-center px-4 py-2.5 bg-[#151519] border-t border-[#25252C]">
+          <View className="w-8 h-8 rounded-full bg-[#E8A1B8]/10 items-center justify-center mr-2">
             <Ionicons
-              name="send"
-              size={18}
-              color={
-                inputText.trim()
-                  ? COLORS.background
-                  : COLORS.muted
-              }
+              name="pencil"
+              size={15}
+              color="#E8A1B8"
             />
-          )}
-        </TouchableOpacity>
+          </View>
+
+          <View className="flex-1">
+            <Text className="text-[#E8A1B8] text-xs font-semibold">
+              Редагування
+            </Text>
+            <Text
+              className="text-[#777780] text-[10px] mt-0.5"
+              numberOfLines={1}
+            >
+              Змініть текст повідомлення
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              setEditingMessageId(null);
+              setInputText("");
+            }}
+            className="w-8 h-8 items-center justify-center"
+          >
+            <Ionicons
+              name="close"
+              size={20}
+              color="#777780"
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {selectedImageUri && (
+        <View className="flex-row items-center px-4 py-2.5 bg-[#151519] border-t border-[#25252C]">
+          <Image
+            source={{
+              uri: selectedImageUri,
+            }}
+            className="w-12 h-12 rounded-xl"
+          />
+
+          <View className="flex-1 ml-3">
+            <Text className="text-white text-xs font-medium">
+              Фото прикріплено
+            </Text>
+            <Text className="text-[#777780] text-[10px] mt-0.5">
+              Додайте підпис або відправте фото
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => setSelectedImageUri(null)}
+            className="w-8 h-8 rounded-full bg-[#25252C] items-center justify-center"
+          >
+            <Ionicons
+              name="close"
+              size={17}
+              color="#777780"
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View className="px-3 pt-2 pb-3 bg-[#0B0B0F] border-t border-[#25252C]">
+        <View className="flex-row items-end">
+          <TouchableOpacity
+            onPress={pickImage}
+            disabled={isSubmitting}
+            className="w-11 h-11 rounded-full bg-[#151519] border border-[#25252C] items-center justify-center mr-2"
+          >
+            <Ionicons
+              name="image-outline"
+              size={21}
+              color="#E8A1B8"
+            />
+          </TouchableOpacity>
+
+          <View className="flex-1 flex-row items-end bg-[#151519] border border-[#25252C] rounded-2xl min-h-[44px]">
+            <TextInput
+              className="flex-1 text-white px-4 py-2.5 text-[15px] max-h-28"
+              placeholder={
+                editingMessageId
+                  ? "Змініть текст..."
+                  : selectedImageUri
+                    ? "Додайте підпис..."
+                    : "Напишіть повідомлення..."
+              }
+              placeholderTextColor="#777780"
+              value={inputText}
+              onChangeText={handleTextChange}
+              multiline
+            />
+
+            <TouchableOpacity
+              onPress={handleSend}
+              disabled={
+                (!inputText.trim() && !selectedImageUri) ||
+                isSubmitting
+              }
+              className={`w-10 h-10 rounded-xl items-center justify-center mr-1 mb-1 ${(!inputText.trim() && !selectedImageUri) ||
+                isSubmitting
+                ? "bg-[#25252C]"
+                : "bg-[#E8A1B8]"
+                }`}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#E8A1B8"
+                />
+              ) : (
+                <Ionicons
+                  name={
+                    editingMessageId
+                      ? "checkmark"
+                      : "arrow-up"
+                  }
+                  size={20}
+                  color={
+                    (!inputText.trim() &&
+                      !selectedImageUri) ||
+                      isSubmitting
+                      ? "#777780"
+                      : "#0B0B0F"
+                  }
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
+
+      <ImageViewerModal
+        visible={!!fullscreenImage}
+        imageUrl={fullscreenImage}
+        onClose={() => setFullscreenImage(null)}
+      />
     </KeyboardAvoidingView>
   );
 }
