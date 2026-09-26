@@ -1,0 +1,1 @@
+npx convex env set JWT_PRIVATE_KEY
