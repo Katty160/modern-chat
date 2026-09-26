@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,19 +11,27 @@ import {
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { COLORS } from "@/constants/theme";
+import { EditProfileModal } from "@/components/EditProfileModal";
 
 export default function ProfileScreen() {
   const router = useRouter();
-
-  const user = useQuery(api.users.currentUser);
+  const currentUser = useQuery(api.users.currentUser);
   const { signOut } = useAuthActions();
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const profileDetails = useQuery(
+    api.users.getUserProfile,
+    currentUser?._id ? { userId: currentUser._id } : "skip"
+  );
 
   const handleSignOut = () => {
     Alert.alert(
-      "Вийти з акаунта?",
-      "Ви дійсно хочете вийти з Modern Chat?",
+      "Вихід з акаунта",
+      "Ви дійсно бажаєте вийти з Modern Chat?",
       [
         {
           text: "Скасувати",
@@ -32,331 +41,164 @@ export default function ProfileScreen() {
           text: "Вийти",
           style: "destructive",
           onPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
-              console.error("Sign out error:", error);
-            }
+            await signOut();
+            router.replace("/(auth)/login");
           },
         },
-      ],
+      ]
     );
   };
 
-  if (user === undefined) {
+  // Завантаження або відсутність користувача
+  if (
+    currentUser === undefined ||
+    currentUser === null ||
+    profileDetails === undefined ||
+    profileDetails === null
+  ) {
     return (
-      <View className="flex-1 bg-[#0B0B0F] items-center justify-center">
-        <ActivityIndicator
-          size="large"
-          color="#E8A1B8"
-        />
+      <View className="flex-1 bg-surface justify-center items-center">
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
-  const displayName = user?.name || "Користувач";
-  const email = user?.email || "Email не вказано";
-
   return (
-    <View className="flex-1 bg-[#0B0B0F]">
-      <Stack.Screen
-        options={{
-          title: "Профіль",
-
-          headerStyle: {
-            backgroundColor: "#0B0B0F",
-          },
-
-          headerTintColor: "#FFFFFF",
-
-          headerShadowVisible: false,
-
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="ml-2 w-10 h-10 rounded-full bg-[#151519] border border-[#25252C] items-center justify-center"
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={20}
-                color="#E8A1B8"
-              />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-
+    <>
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          padding: 16,
-          paddingBottom: 40,
-        }}
+        className="flex-1 bg-surface"
+        contentContainerStyle={{ padding: 20 }}
       >
-        {/* Profile card */}
-        <View className="bg-[#151519] border border-[#25252C] rounded-[26px] p-5">
-          <View className="items-center">
-            {/* Avatar */}
-            <View className="w-[104px] h-[104px] rounded-[32px] bg-[#E8A1B8]/10 border border-[#E8A1B8]/20 items-center justify-center overflow-hidden">
-              {user?.image ? (
-                <Image
-                  source={{ uri: user.image }}
-                  className="w-full h-full"
-                />
-              ) : (
-                <Ionicons
-                  name="person"
-                  size={48}
-                  color="#E8A1B8"
-                />
-              )}
+        {/* Шапка профілю */}
+        <View className="items-center mt-4 mb-6">
+          <View className="w-28 h-28 rounded-full bg-secondary border-4 border-primary/40 items-center justify-center overflow-hidden mb-3">
+            {currentUser.image ? (
+              <Image
+                source={{ uri: currentUser.image }}
+                className="w-full h-full"
+                resizeMode="cover"
+              />
+            ) : (
+              <Ionicons
+                name="person"
+                size={54}
+                color={COLORS.primary}
+              />
+            )}
+          </View>
+
+          <Text className="text-white text-2xl font-bold">
+            {currentUser.name ?? "Користувач"}
+          </Text>
+
+          {currentUser.username && (
+            <Text className="text-primary text-sm font-semibold mt-0.5">
+              @{currentUser.username}
+            </Text>
+          )}
+
+          {currentUser.email && (
+            <Text className="text-textMuted text-xs mt-1">
+              {currentUser.email}
+            </Text>
+          )}
+
+          {currentUser.bio ? (
+            <View className="mt-3 px-4 py-2 bg-secondary rounded-xl border border-surfaceLight max-w-[90%]">
+              <Text className="text-white/90 text-sm text-center italic">
+                {currentUser.bio}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Статистика */}
+        <View className="flex-row gap-3 mb-6">
+          <View className="flex-1 bg-secondary border border-surfaceLight rounded-2xl p-4 items-center">
+            <View className="w-10 h-10 rounded-full bg-primary/20 items-center justify-center mb-2">
+              <Ionicons
+                name="chatbubble-ellipses"
+                size={20}
+                color={COLORS.primary}
+              />
             </View>
 
-            {/* Name */}
-            <Text
-              className="text-white text-[25px] font-bold mt-4 text-center"
-              numberOfLines={1}
-            >
-              {displayName}
+            <Text className="text-white text-xl font-bold">
+              {profileDetails.stats.messagesCount ?? 0}
             </Text>
 
-            {/* Email */}
-            <View className="flex-row items-center mt-2">
-              <Ionicons
-                name="mail-outline"
-                size={15}
-                color="#777780"
-              />
-
-              <Text
-                className="text-[#777780] text-sm ml-2"
-                numberOfLines={1}
-              >
-                {email}
-              </Text>
-            </View>
-
-            {/* Edit */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              className="bg-[#E8A1B8] h-[46px] px-6 rounded-2xl flex-row items-center justify-center mt-5"
-            >
-              <Ionicons
-                name="create-outline"
-                size={18}
-                color="#0B0B0F"
-              />
-
-              <Text className="text-[#0B0B0F] font-bold ml-2">
-                Редагувати профіль
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Account */}
-        <Text className="text-[#777780] text-xs font-bold uppercase tracking-[1.5px] mt-8 mb-3">
-          Акаунт
-        </Text>
-
-        <View className="bg-[#151519] border border-[#25252C] rounded-[22px] overflow-hidden">
-          {/* Personal */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center p-4"
-          >
-            <View className="w-11 h-11 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center">
-              <Ionicons
-                name="person-outline"
-                size={20}
-                color="#E8A1B8"
-              />
-            </View>
-
-            <View className="flex-1 ml-4">
-              <Text className="text-white text-[15px] font-semibold">
-                Особисті дані
-              </Text>
-
-              <Text className="text-[#777780] text-xs mt-1">
-                Ім'я та інформація профілю
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#55555F"
-            />
-          </TouchableOpacity>
-
-          <View className="h-[1px] bg-[#25252C] ml-[72px]" />
-
-          {/* Notifications */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center p-4"
-          >
-            <View className="w-11 h-11 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center">
-              <Ionicons
-                name="notifications-outline"
-                size={20}
-                color="#E8A1B8"
-              />
-            </View>
-
-            <View className="flex-1 ml-4">
-              <Text className="text-white text-[15px] font-semibold">
-                Сповіщення
-              </Text>
-
-              <Text className="text-[#777780] text-xs mt-1">
-                Повідомлення та звуки
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#55555F"
-            />
-          </TouchableOpacity>
-
-          <View className="h-[1px] bg-[#25252C] ml-[72px]" />
-
-          {/* Privacy */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center p-4"
-          >
-            <View className="w-11 h-11 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center">
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={20}
-                color="#E8A1B8"
-              />
-            </View>
-
-            <View className="flex-1 ml-4">
-              <Text className="text-white text-[15px] font-semibold">
-                Приватність
-              </Text>
-
-              <Text className="text-[#777780] text-xs mt-1">
-                Безпека та конфіденційність
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#55555F"
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Other */}
-        <Text className="text-[#777780] text-xs font-bold uppercase tracking-[1.5px] mt-8 mb-3">
-          Інше
-        </Text>
-
-        <View className="bg-[#151519] border border-[#25252C] rounded-[22px] overflow-hidden">
-          {/* Theme */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center p-4"
-          >
-            <View className="w-11 h-11 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center">
-              <Ionicons
-                name="moon-outline"
-                size={20}
-                color="#E8A1B8"
-              />
-            </View>
-
-            <View className="flex-1 ml-4">
-              <Text className="text-white text-[15px] font-semibold">
-                Тема
-              </Text>
-
-              <Text className="text-[#777780] text-xs mt-1">
-                Темна
-              </Text>
-            </View>
-
-            <View className="bg-[#E8A1B8]/10 px-3 py-1.5 rounded-full">
-              <Text className="text-[#E8A1B8] text-[11px] font-bold">
-                DARK
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <View className="h-[1px] bg-[#25252C] ml-[72px]" />
-
-          {/* About */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center p-4"
-          >
-            <View className="w-11 h-11 rounded-2xl bg-[#E8A1B8]/10 items-center justify-center">
-              <Ionicons
-                name="information-circle-outline"
-                size={20}
-                color="#E8A1B8"
-              />
-            </View>
-
-            <View className="flex-1 ml-4">
-              <Text className="text-white text-[15px] font-semibold">
-                Про застосунок
-              </Text>
-
-              <Text className="text-[#777780] text-xs mt-1">
-                Modern Chat · Версія 1.0.0
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={19}
-              color="#55555F"
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Logout */}
-        <TouchableOpacity
-          onPress={handleSignOut}
-          activeOpacity={0.8}
-          className="h-[52px] rounded-2xl bg-[#151519] border border-[#3A252D] flex-row items-center justify-center mt-8"
-        >
-          <Ionicons
-            name="log-out-outline"
-            size={19}
-            color="#E8A1B8"
-          />
-
-          <Text className="text-[#E8A1B8] text-[14px] font-bold ml-2">
-            Вийти з акаунта
-          </Text>
-        </TouchableOpacity>
-
-        {/* Footer */}
-        <View className="items-center mt-7">
-          <View className="flex-row items-center">
-            <View className="w-1.5 h-1.5 rounded-full bg-[#E8A1B8] mr-2" />
-
-            <Text className="text-[#55555F] text-[11px]">
-              Modern Chat
+            <Text className="text-textMuted text-xs mt-0.5">
+              Повідомлень
             </Text>
           </View>
 
-          <Text className="text-[#3D3D45] text-[10px] mt-1">
-            v1.0.0
-          </Text>
+          <View className="flex-1 bg-secondary border border-surfaceLight rounded-2xl p-4 items-center">
+            <View className="w-10 h-10 rounded-full bg-primary/20 items-center justify-center mb-2">
+              <Ionicons
+                name="folder"
+                size={20}
+                color={COLORS.primary}
+              />
+            </View>
+
+            <Text className="text-white text-xl font-bold">
+              {profileDetails.stats.roomsCreatedCount ?? 0}
+            </Text>
+
+            <Text className="text-textMuted text-xs mt-0.5">
+              Створено кімнат
+            </Text>
+          </View>
+        </View>
+
+        {/* Кнопки */}
+        <View className="gap-3">
+          <TouchableOpacity
+            onPress={() => {
+              console.log("EDIT BUTTON PRESSED");
+              setIsEditModalOpen(true);
+            }}
+            activeOpacity={0.8}
+            className="flex-row items-center justify-center bg-primary rounded-2xl py-3.5 px-4"
+          >
+            <Ionicons
+              name="create-outline"
+              size={20}
+              color="#FFFFFF"
+              style={{ marginRight: 8 }}
+            />
+
+            <Text className="text-white font-bold text-base">
+              Редагувати профіль
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleSignOut}
+            activeOpacity={0.8}
+            className="flex-row items-center justify-center bg-red-600/10 border border-red-500/30 rounded-2xl py-3.5 px-4"
+          >
+            <Ionicons
+              name="log-out-outline"
+              size={20}
+              color={COLORS.danger}
+              style={{ marginRight: 8 }}
+            />
+
+            <Text className="text-red-500 font-bold text-base">
+              Вийти з акаунта
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+
+      {/* Модальне вікно */}
+      <EditProfileModal
+        visible={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        currentUser={currentUser}
+      />
+    </>
   );
 }
+

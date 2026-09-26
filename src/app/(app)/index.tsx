@@ -5,18 +5,20 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { COLORS } from "@/constants/theme";
 
 export default function HomeScreen() {
   const router = useRouter();
 
   const rooms = useQuery(api.rooms.listRooms);
+  const currentUser = useQuery(api.users.currentUser);
+
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = () => {
@@ -41,20 +43,30 @@ export default function HomeScreen() {
 
           headerShadowVisible: false,
 
+          // Аватарка користувача
           headerLeft: () => (
             <TouchableOpacity
               onPress={() => router.push("/profile")}
-              className="ml-2 w-10 h-10 rounded-full bg-[#151519] border border-[#25252C] items-center justify-center"
+              className="ml-2 w-10 h-10 rounded-full bg-[#151519] border border-[#E8A1B8]/40 items-center justify-center overflow-hidden"
               activeOpacity={0.8}
             >
-              <Ionicons
-                name="person-outline"
-                size={19}
-                color="#E8A1B8"
-              />
+              {currentUser?.image ? (
+                <Image
+                  source={{ uri: currentUser.image }}
+                  className="w-full h-full"
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons
+                  name="person-outline"
+                  size={19}
+                  color="#E8A1B8"
+                />
+              )}
             </TouchableOpacity>
           ),
 
+          // Кнопка створення кімнати
           headerRight: () => (
             <TouchableOpacity
               onPress={() => router.push("/new-room")}
@@ -178,3 +190,4 @@ export default function HomeScreen() {
     </View>
   );
 }
+

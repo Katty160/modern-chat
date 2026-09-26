@@ -23,33 +23,42 @@ export const sendMessage = mutation({
   args: {
     chatRoomId: v.id("chatRooms"),
     content: v.string(),
+    replyToId: v.optional(v.id("messages")),
+    replyToSender: v.optional(v.string()),
+    replyToText: v.optional(v.string()),
   },
+
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
+
     if (!userId) {
       throw new Error("Unauthorized: Потрібна авторизація");
     }
 
     const user = await ctx.db.get(userId);
+
     if (!user) {
       throw new Error("User not found: Користувача не знайдено");
     }
 
     const trimmedContent = args.content.trim();
+
     if (!trimmedContent) {
       throw new Error("Message content cannot be empty");
     }
 
-    // 1. Зберігаємо повідомлення
     const messageId = await ctx.db.insert("messages", {
       chatRoomId: args.chatRoomId,
       senderId: userId,
-      senderName: user.name ?? user.email ?? "Гравець",
+      senderName: user.name ?? user.email ?? "Користувач",
       senderPhoto: user.image,
       content: trimmedContent,
+
+      replyToId: args.replyToId,
+      replyToSender: args.replyToSender,
+      replyToText: args.replyToText,
     });
 
-    // 2. Оновлюємо останнє повідомлення в кімнаті для швидкого перегляду у списку
     await ctx.db.patch(args.chatRoomId, {
       lastMessage: trimmedContent,
       lastMessageAt: Date.now(),
@@ -155,10 +164,9 @@ export const deleteMessage = mutation({
     // Оновлюємо прев'ю чату
     await ctx.db.patch(message.chatRoomId, {
       lastMessage: lastRemainingMessage
-        ? `${lastRemainingMessage.senderName}: ${
-            lastRemainingMessage.content ||
-            (lastRemainingMessage.imageUrl ? "📷 Фото" : "")
-          }`
+        ? `${lastRemainingMessage.senderName}: ${lastRemainingMessage.content ||
+        (lastRemainingMessage.imageUrl ? "📷 Фото" : "")
+        }`
         : "Повідомлень немає",
 
       lastMessageAt:
@@ -188,6 +196,9 @@ export const sendMediaMessage = mutation({
     chatRoomId: v.id("chatRooms"),
     storageId: v.id("_storage"),
     caption: v.optional(v.string()),
+    replyToId: v.optional(v.id("messages")),
+    replyToSender: v.optional(v.string()),
+    replyToText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -197,33 +208,29 @@ export const sendMediaMessage = mutation({
 
     const user = await ctx.db.get(userId);
     if (!user) {
-      throw new Error("User not found: Користувача не знайдено");
+      throw new Error("Користувача не знайдено");
     }
 
-    // Отримуємо публічне посилання на збережений файл
     const imageUrl = await ctx.storage.getUrl(args.storageId);
     if (!imageUrl) {
-      throw new Error("Не вдалося отримати URL завантаженого зображення");
+      throw new Error("Не вдалося отримати посилання на збережений файл");
     }
 
-    const trimmedCaption = args.caption?.trim();
-
-    // Створюємо повідомлення в базі
     const messageId = await ctx.db.insert("messages", {
       chatRoomId: args.chatRoomId,
       senderId: userId,
       senderName: user.name ?? user.email ?? "Користувач",
       senderPhoto: user.image,
+      content: args.caption?.trim() || undefined,
       imageUrl,
       storageId: args.storageId,
-      content: trimmedCaption,
+      replyToId: args.replyToId,
+      replyToSender: args.replyToSender,
+      replyToText: args.replyToText,
     });
 
-    // Оновлюємо інформацію про останнє повідомлення в кімнаті
     await ctx.db.patch(args.chatRoomId, {
-      lastMessage: `${user.name ?? "Користувач"}: 📷 Фото ${
-        trimmedCaption ? `(${trimmedCaption})` : ""
-      }`,
+      lastMessage: `${user.name ?? "Користувач"}: 📷 Фотографія`,
       lastMessageAt: Date.now(),
     });
 
