@@ -1,28 +1,28 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true,
-    "types": [
-      "node"
-    ],
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@/convex/*": [
-        "./convex/*"
-      ],
-      "@/assets/*": [
-        "./assets/*"
-      ]
-    }
-  },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.d.ts",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
-  ]
+"extends": "expo/tsconfig.base",
+"compilerOptions": {
+"strict": true,
+"types": [
+"node"
+],
+"paths": {
+"@/*": [
+"./src/*"
+],
+"@/convex/*": [
+  "./convex/*"
+],
+"@/assets/*": [
+"./assets/*"
+]
+}
+},
+"include": [
+"**/*.ts",
+"**/*.tsx",
+"**/*.d.ts",
+".expo/types/**/*.ts",
+"expo-env.d.ts",
+"nativewind-env.d.ts"
+]
 }

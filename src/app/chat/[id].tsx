@@ -15,8 +15,17 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Ionicons } from "@expo/vector-icons";
-import { COLORS } from "@/constants/theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const COLORS = {
+  background: "#0B0B0F",
+  card: "#151519",
+  border: "#25252C",
+  primary: "#E8A1B8",
+  white: "#FFFFFF",
+  muted: "#777780",
+  darkMuted: "#55555F",
+};
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,19 +34,24 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const roomId = id as Id<"chatRooms">;
+
   const room = useQuery(api.rooms.getRoom, { roomId });
-  const messages = useQuery(api.messages.listMessages, { chatRoomId: roomId });
+  const messages = useQuery(api.messages.listMessages, {
+    chatRoomId: roomId,
+  });
   const currentUser = useQuery(api.users.currentUser);
+
   const sendMessage = useMutation(api.messages.sendMessage);
 
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  // Автоматичне прокручування вниз при нових повідомленнях
   useEffect(() => {
     if (messages && messages.length > 0) {
       setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToEnd({
+          animated: true,
+        });
       }, 100);
     }
   }, [messages?.length]);
@@ -45,7 +59,8 @@ export default function ChatScreen() {
   const handleSend = async () => {
     if (!inputText.trim() || isSending) return;
 
-    const text = inputText;
+    const text = inputText.trim();
+
     setInputText("");
     setIsSending(true);
 
@@ -64,13 +79,25 @@ export default function ChatScreen() {
 
   const formatTime = (timestamp?: number) => {
     if (!timestamp) return "";
+
     const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   if (!room) {
     return (
-      <View className="flex-1 bg-surface justify-center items-center">
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
@@ -80,71 +107,172 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      className="flex-1 bg-surface"
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.background,
+      }}
     >
       <Stack.Screen
         options={{
           title: room.title,
+
+          headerStyle: {
+            backgroundColor: COLORS.background,
+          },
+
+          headerTintColor: COLORS.white,
+
+          headerShadowVisible: false,
+
           headerRight: () => (
             <TouchableOpacity
               onPress={() => router.push(`/settings/${roomId}`)}
-              className="p-1"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: COLORS.card,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 4,
+              }}
+              activeOpacity={0.8}
             >
               <Ionicons
                 name="information-circle-outline"
-                size={24}
-                color={COLORS.white}
+                size={20}
+                color={COLORS.primary}
               />
             </TouchableOpacity>
           ),
         }}
       />
 
-      {/* Список повідомлень */}
       {messages === undefined ? (
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color={COLORS.primary} />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator
+            size="large"
+            color={COLORS.primary}
+          />
         </View>
       ) : (
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item._id}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingVertical: 16,
+            paddingTop: 16,
+            paddingBottom: 12,
             gap: 12,
+            flexGrow: messages.length === 0 ? 1 : undefined,
           }}
           ListEmptyComponent={
-            <View className="flex-1 items-center justify-center py-20">
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={40}
-                color={COLORS.textMuted}
-              />
-              <Text className="text-textMuted text-sm mt-2 text-center">
-                Повідомлень ще немає. Напишіть першим!
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+                paddingVertical: 80,
+              }}
+            >
+              <View
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 24,
+                  backgroundColor: "#E8A1B814",
+                  borderWidth: 1,
+                  borderColor: "#E8A1B826",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={32}
+                  color={COLORS.primary}
+                />
+              </View>
+
+              <Text
+                style={{
+                  color: COLORS.white,
+                  fontSize: 16,
+                  fontWeight: "700",
+                  marginTop: 16,
+                }}
+              >
+                Тут поки тихо
+              </Text>
+
+              <Text
+                style={{
+                  color: COLORS.muted,
+                  fontSize: 13,
+                  marginTop: 6,
+                  textAlign: "center",
+                }}
+              >
+                Напишіть першим і почніть розмову
               </Text>
             </View>
           }
           renderItem={({ item }) => {
-            const isMe = currentUser && item.senderId === currentUser._id;
+            const isMe =
+              currentUser && item.senderId === currentUser._id;
 
             return (
               <View
-                className={`flex-row items-end gap-2 ${
-                  isMe ? "justify-end" : "justify-start"
-                }`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-end",
+                  justifyContent: isMe
+                    ? "flex-end"
+                    : "flex-start",
+                  gap: 8,
+                }}
               >
                 {!isMe && (
-                  <View className="w-7 h-7 rounded-full bg-secondary border border-surfaceLight items-center justify-center mb-1">
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: COLORS.card,
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: 2,
+                      overflow: "hidden",
+                    }}
+                  >
                     {item.senderPhoto ? (
                       <Image
                         source={{ uri: item.senderPhoto }}
-                        className="w-full h-full rounded-full"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                        }}
                       />
                     ) : (
-                      <Text className="text-textMuted text-xs font-bold">
+                      <Text
+                        style={{
+                          color: COLORS.primary,
+                          fontSize: 12,
+                          fontWeight: "700",
+                        }}
+                      >
                         {item.senderName[0]?.toUpperCase() ?? "U"}
                       </Text>
                     )}
@@ -152,24 +280,54 @@ export default function ChatScreen() {
                 )}
 
                 <View
-                  className={`max-w-[78%] px-4 py-2.5 rounded-2xl ${
-                    isMe
-                      ? "bg-primary rounded-br-none"
-                      : "bg-secondary border border-surfaceLight rounded-bl-none"
-                  }`}
+                  style={{
+                    maxWidth: "78%",
+                    paddingHorizontal: 16,
+                    paddingVertical: 11,
+                    borderRadius: 18,
+                    backgroundColor: isMe
+                      ? COLORS.primary
+                      : COLORS.card,
+                    borderWidth: isMe ? 0 : 1,
+                    borderColor: COLORS.border,
+                    borderBottomRightRadius: isMe ? 4 : 18,
+                    borderBottomLeftRadius: isMe ? 18 : 4,
+                  }}
                 >
                   {!isMe && (
-                    <Text className="text-primary text-xs font-bold mb-1">
+                    <Text
+                      style={{
+                        color: COLORS.primary,
+                        fontSize: 12,
+                        fontWeight: "700",
+                        marginBottom: 4,
+                      }}
+                    >
                       {item.senderName}
                     </Text>
                   )}
-                  <Text className="text-white text-base leading-5">
+
+                  <Text
+                    style={{
+                      color: isMe
+                        ? COLORS.background
+                        : COLORS.white,
+                      fontSize: 15,
+                      lineHeight: 21,
+                    }}
+                  >
                     {item.content}
                   </Text>
+
                   <Text
-                    className={`text-[10px] text-right mt-1 ${
-                      isMe ? "text-white/70" : "text-textMuted"
-                    }`}
+                    style={{
+                      color: isMe
+                        ? "#0B0B0F99"
+                        : COLORS.muted,
+                      fontSize: 10,
+                      textAlign: "right",
+                      marginTop: 5,
+                    }}
                   >
                     {formatTime(item._creationTime)}
                   </Text>
@@ -180,15 +338,36 @@ export default function ChatScreen() {
         />
       )}
 
-      {/* Панель введення повідомлення */}
+      {/* Поле введення */}
       <View
-        style={{ paddingBottom: Math.max(insets.bottom, 10) }}
-        className="px-4 py-2 bg-surface border-t border-surfaceLight flex-row items-end gap-2"
+        style={{
+          paddingHorizontal: 16,
+          paddingTop: 10,
+          paddingBottom: Math.max(insets.bottom, 10),
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          flexDirection: "row",
+          alignItems: "flex-end",
+          gap: 8,
+        }}
       >
         <TextInput
-          className="flex-1 bg-secondary border border-surfaceLight rounded-2xl px-4 py-2.5 text-white text-base max-h-28 min-h-[42px]"
-          placeholder="Повідомлення..."
-          placeholderTextColor={COLORS.textMuted}
+          style={{
+            flex: 1,
+            backgroundColor: COLORS.card,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 18,
+            paddingHorizontal: 16,
+            paddingVertical: 11,
+            color: COLORS.white,
+            fontSize: 15,
+            minHeight: 44,
+            maxHeight: 110,
+          }}
+          placeholder="Напишіть повідомлення..."
+          placeholderTextColor={COLORS.muted}
           value={inputText}
           onChangeText={setInputText}
           multiline
@@ -197,18 +376,36 @@ export default function ChatScreen() {
         <TouchableOpacity
           onPress={handleSend}
           disabled={!inputText.trim() || isSending}
-          className={`w-11 h-11 rounded-2xl items-center justify-center ${
-            inputText.trim() && !isSending ? "bg-primary" : "bg-secondary"
-          }`}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 17,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor:
+              inputText.trim() && !isSending
+                ? COLORS.primary
+                : COLORS.card,
+            borderWidth:
+              inputText.trim() && !isSending ? 0 : 1,
+            borderColor: COLORS.border,
+          }}
           activeOpacity={0.8}
         >
           {isSending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator
+              size="small"
+              color={COLORS.primary}
+            />
           ) : (
             <Ionicons
               name="send"
               size={18}
-              color={inputText.trim() ? "#FFFFFF" : COLORS.textMuted}
+              color={
+                inputText.trim()
+                  ? COLORS.background
+                  : COLORS.muted
+              }
             />
           )}
         </TouchableOpacity>
