@@ -49,10 +49,16 @@ export default defineSchema({
     replyToSender: v.optional(v.string()),
     replyToText: v.optional(v.string()),
 
+    videoUrl: v.optional(v.string()),
+    videoStorageId: v.optional(v.id("_storage")),
+    videoDuration: v.optional(v.number()),
+    isVideoNote: v.optional(v.boolean()),
+
     audioUrl: v.optional(v.string()),
     audioStorageId: v.optional(v.id("_storage")),
     audioDuration: v.optional(v.number()), // тривалість у секундах
-  }).index("by_chat_room", ["chatRoomId"]),
+  }).index("by_chat_room", ["chatRoomId"])
+    .index("by_sender", ["senderId"]),
 
   messageReactions: defineTable({
     messageId: v.id("messages"),

@@ -15,20 +15,31 @@ import { Id } from "@/convex/_generated/dataModel";
 
 import { VoiceMessagePlayer } from "./VoiceMessagePlayer";
 import { ReactionBadges } from "./ReactionBadges";
+import { VideoNotePlayer } from "./VideoNotePlayer";
 
 export interface MessageItemData {
   _id: Id<"messages">;
   senderId: Id<"users">;
   senderName: string;
   senderPhoto?: string;
+
   content?: string;
+
   imageUrl?: string;
+
   audioUrl?: string;
   audioDuration?: number;
+
+  videoUrl?: string;
+  videoDuration?: number;
+  isVideoNote?: boolean;
+
   isEdited?: boolean;
+
   replyToId?: Id<"messages">;
   replyToSender?: string;
   replyToText?: string;
+
   _creationTime: number;
 }
 
@@ -167,13 +178,24 @@ export const SwipeableMessageItem: React.FC<
               </TouchableOpacity>
             )}
 
-            {/* Голосове */}
+            {/* Голосове повідомлення */}
             {item.audioUrl && (
               <View className="my-1">
                 <VoiceMessagePlayer
                   audioUrl={item.audioUrl}
                   duration={item.audioDuration}
                   isMyMessage={isOwn}
+                />
+              </View>
+            )}
+
+            {/* Відеоповідомлення */}
+            {item.videoUrl && item.isVideoNote && (
+              <View className="my-1 items-center justify-center p-1">
+                <VideoNotePlayer
+                  videoUrl={item.videoUrl}
+                  duration={item.videoDuration}
+                  size={210}
                 />
               </View>
             )}

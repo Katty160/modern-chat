@@ -39,7 +39,15 @@
         {
           "microphonePermission": "Дозвольте доступ до мікрофона для запису голосових повідомлень."
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Modern Chat потрібен доступ до камери для запису відеокружечків.",
+          "microphonePermission": "Modern Chat потрібен доступ до мікрофона для запису звуку у відеокружечках."
+        }
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

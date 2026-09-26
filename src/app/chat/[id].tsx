@@ -12,7 +12,7 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,7 +31,7 @@ import {
   requestRecordingPermissionsAsync,
 } from "expo-audio";
 import { ReactionPickerModal } from "@/components/ReactionPickerModal";
-
+import { VideoNoteRecorder } from "@/components/VideoNoteRecorder";
 
 export default function ChatRoomScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,13 +39,33 @@ export default function ChatRoomScreen() {
 
   const chatRoomId = id as Id<"chatRooms">;
   const room = useQuery(api.rooms.getRoom, { roomId: chatRoomId });
-  const messages = useQuery(api.messages.listMessages, { chatRoomId });
+
+  const MESSAGES_PAGE_SIZE = 25;
+
+  const {
+    results: messages,
+    status: messagesStatus,
+    loadMore,
+    isLoading: messagesLoading,
+  } = usePaginatedQuery(
+    api.messages.getPaginatedMessages,
+    { chatRoomId },
+    { initialNumItems: MESSAGES_PAGE_SIZE }
+  );
+
+  const handleLoadMore = () => {
+    if (messagesStatus === "CanLoadMore") {
+      loadMore(MESSAGES_PAGE_SIZE);
+    }
+  };
+
   const currentUser = useQuery(api.users.currentUser);
   const typingUsers = useQuery(api.typing.getTypingUsers, { chatRoomId });
 
   const sendMessage = useMutation(api.messages.sendMessage);
   const sendMediaMessage = useMutation(api.messages.sendMediaMessage);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
+  const sendVideoNote = useMutation(api.messages.sendVideoNoteMessage);
   const editMessage = useMutation(api.messages.editMessage);
   const deleteMessage = useMutation(api.messages.deleteMessage);
   const setTyping = useMutation(api.typing.setTyping);
@@ -349,6 +369,66 @@ export default function ChatRoomScreen() {
       setIsSubmitting(false);
     }
   };
+  const [isVideoRecorderVisible, setIsVideoRecorderVisible] =
+    useState(false);
+  const handleSendVideoNote = async (
+    videoUri: string,
+    duration: number
+  ) => {
+    try {
+      setIsSubmitting(true);
+
+      // Отримуємо URL для Convex Storage
+      const uploadUrl = await generateUploadUrl();
+
+      // Створюємо файл із відео
+      const videoFile = new File(videoUri);
+
+      // Завантажуємо відео
+      const uploadResult = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "video/mp4",
+        },
+        body: videoFile,
+      });
+
+      if (!uploadResult.ok) {
+        const errorText = await uploadResult.text();
+
+        console.error("❌ VIDEO UPLOAD ERROR");
+        console.error("Status:", uploadResult.status);
+        console.error("Response:", errorText);
+
+        throw new Error(
+          `Не вдалося завантажити відео (${uploadResult.status})`
+        );
+      }
+
+      const { storageId } = await uploadResult.json();
+
+      // Створюємо відеоповідомлення
+      await sendVideoNote({
+        chatRoomId,
+        videoStorageId: storageId,
+        videoDuration: duration,
+      });
+
+      setIsVideoRecorderVisible(false);
+    } catch (error) {
+      console.error(
+        "Помилка надсилання відеокружечка:",
+        error
+      );
+
+      Alert.alert(
+        "Помилка",
+        "Не вдалося надіслати відеоповідомлення"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -370,18 +450,22 @@ export default function ChatRoomScreen() {
         }}
       />
 
-      {/* Список повідомлень */}
       <FlatList
         ref={flatListRef}
         data={messages}
+        inverted
         keyExtractor={(item) => item._id}
         contentContainerStyle={{ padding: 16 }}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <SwipeableMessageItem
             item={item as MessageItemData}
             isOwn={item.senderId === currentUser?._id}
-            onLongPress={() => handleMessageLongPress(item as MessageItemData)}
+            onLongPress={() =>
+              handleMessageLongPress(item as MessageItemData)
+            }
             onReply={handleStartReply}
             onImagePress={(url) => setFullscreenImage(url)}
             onAuthorPress={(authorId) =>
@@ -392,7 +476,18 @@ export default function ChatRoomScreen() {
             }
           />
         )}
+        ListFooterComponent={
+          messagesStatus === "LoadingMore" ? (
+            <View className="py-4 items-center">
+              <ActivityIndicator
+                size="small"
+                color={COLORS.primary}
+              />
+            </View>
+          ) : null
+        }
       />
+
 
       {/* Індикатор набору тексту іншими учасниками */}
       {typingUsers && typingUsers.length > 0 && <TypingDots typingUsers={typingUsers} />}
@@ -495,6 +590,18 @@ export default function ChatRoomScreen() {
                 color={COLORS.primary}
               />
             </TouchableOpacity>
+            {/* Відеокружечок */}
+            <TouchableOpacity
+              onPress={() => setIsVideoRecorderVisible(true)}
+              disabled={isSubmitting}
+              className="mr-2 p-2 rounded-full bg-surfaceLight"
+            >
+              <Ionicons
+                name="videocam-outline"
+                size={22}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
 
             {/* Поле тексту */}
             <TextInput
@@ -572,6 +679,11 @@ export default function ChatRoomScreen() {
             setReactionMessageId(null);
           }
         }}
+      />
+      <VideoNoteRecorder
+        visible={isVideoRecorderVisible}
+        onClose={() => setIsVideoRecorderVisible(false)}
+        onSendVideo={handleSendVideoNote}
       />
     </KeyboardAvoidingView>
   );

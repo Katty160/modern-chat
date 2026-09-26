@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-
+import { paginationOptsValidator } from "convex/server";
 /**
  * Отримання списку повідомлень у вказаній кімнаті в хронологічному порядку
  */
@@ -15,6 +15,56 @@ export const listMessages = query({
       .collect();
   },
 });
+
+export const getPaginatedMessages = query({
+  args: {
+    chatRoomId: v.id("chatRooms"),
+    paginationOpts: paginationOptsValidator,
+  },
+
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      };
+    }
+
+    const paginated = await ctx.db
+      .query("messages")
+      .withIndex("by_chat_room", (q) =>
+        q.eq("chatRoomId", args.chatRoomId)
+      )
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    const messagesWithSender = await Promise.all(
+      paginated.page.map(async (message) => {
+        const sender = await ctx.db.get(message.senderId);
+
+        return {
+          ...message,
+
+          senderName:
+            sender?.name ??
+            sender?.email ??
+            "Користувач",
+
+          senderPhoto: sender?.image,
+        };
+      })
+    );
+
+    return {
+      ...paginated,
+      page: messagesWithSender,
+    };
+  },
+});
+
 
 /**
  * Відправка нового повідомлення
@@ -287,3 +337,55 @@ export const sendAudioMessage = mutation({
     return messageId;
   },
 });
+
+export const sendVideoNoteMessage = mutation({
+  args: {
+    chatRoomId: v.id("chatRooms"),
+    videoStorageId: v.id("_storage"),
+    videoDuration: v.number(),
+  },
+
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
+      throw new Error("Необхідно авторизуватися");
+    }
+
+    const user = await ctx.db.get(userId);
+
+    if (!user) {
+      throw new Error("Користувача не знайдено");
+    }
+
+    // Отримуємо публічний URL відео з Convex Storage
+    const videoUrl = await ctx.storage.getUrl(args.videoStorageId);
+
+    if (!videoUrl) {
+      throw new Error("Не вдалося отримати URL відеофайлу");
+    }
+
+    // Зберігаємо відеоповідомлення
+    const messageId = await ctx.db.insert("messages", {
+      chatRoomId: args.chatRoomId,
+      senderId: userId,
+      senderName: user.name ?? user.email ?? "Користувач",
+      senderPhoto: user.image ?? undefined,
+
+      videoUrl,
+      videoStorageId: args.videoStorageId,
+      videoDuration: args.videoDuration,
+      isVideoNote: true,
+    });
+
+    // Оновлюємо останню активність кімнати
+    await ctx.db.patch(args.chatRoomId, {
+      lastMessage: "🎥 Відеоповідомлення",
+      lastMessageAt: Date.now(),
+    });
+
+    return messageId;
+  },
+});
+
+
